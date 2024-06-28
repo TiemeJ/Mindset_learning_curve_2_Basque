@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="eu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zaindu Zure Ikaskuntza Kurba</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+<style>
+body{font-family:sans-serif;display:flex;flex-direction:column;min-height:100vh;margin:0;background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);color:#333}
+.container{flex:1;display:flex;flex-direction:column;align-items:center;padding:20px;max-width:1000px;margin:0 auto;box-sizing:border-box}
+header,footer{background-color:#2c3e50;color:#fff;text-align:center;padding:10px 0;width:100%}
+h1,h2{color:#2c3e50;text-align:center;margin-bottom:20px}
+.main-title,.game-section,#results{width:100%;background-color:rgba(255,255,255,.8);border-radius:15px;padding:20px;box-shadow:0 10px 20px rgba(0,0,0,.1);box-sizing:border-box}
+.main-title{font-size:2.5em;margin-bottom:20px}
+p{text-align:center;line-height:1.6;margin-bottom:20px;max-width:600px}
+#gameContainer{display:flex;justify-content:center;gap:20px;margin-bottom:20px}
+#gameArea,#trackpad{width:300px;height:300px;border:2px solid #3498db;position:relative;border-radius:10px;overflow:hidden}
+#gameArea{background:linear-gradient(45deg,#f1f2f6,#e3e5e8)}
+#trackpad{background:linear-gradient(45deg,#e3e5e8,#d1d3d7);cursor:crosshair}
+#cursor{width:6px;height:6px;background-color:#3498db;border-radius:50%;position:absolute;pointer-events:none;box-shadow:0 0 10px rgba(52,152,219,.7);transition:background-color .3s}
+#trail,#cursorPath{position:absolute;top:0;left:0;width:100%;height:100%}
+.info-box{background-color:#ecf0f1;border-radius:5px;padding:10px;margin:10px 0;text-align:center}
+#score,#mistakeCount{font-size:1.2em;font-weight:700;color:#2c3e50}
+#results{text-align:center;display:flex;flex-direction:column;align-items:center}
+.chart-container{width:100%;max-width:600px;margin-bottom:20px}
+.btn{background-color:#3498db;color:#fff;border:none;padding:10px 20px;border-radius:5px;cursor:pointer;font-size:1em;transition:background-color .3s}
+.btn:hover{background-color:#2980b9}
+#mistakeIndicator{position:absolute;width:40px;height:40px;border-radius:50%;background-color:rgba(231,76,60,.5);pointer-events:none;display:none;animation:pulse .5s ease-out}
+@keyframes pulse{0%{transform:scale(0);opacity:1}100%{transform:scale(1);opacity:0}}
+.screenshots-container{display:flex;justify-content:center;gap:20px;margin-top:20px}
+.screenshot{display:flex;flex-direction:column;align-items:center}
+.screenshot img{width:200px;height:200px;object-fit:contain;border:2px solid #3498db;border-radius:5px}
+.screenshot-caption{margin-top:5px;font-weight:bold;color:#2c3e50}
+</style>
+</head>
+<body>
+<header><h1>Zaindu Zure Ikaskuntza Kurba</h1></header>
+<div class="container">
+<h1 class="main-title">Zaindu Zure Ikaskuntza Kurba</h1>
+<div class="game-section">
+<p id="instructions"><strong>Ispilurik gabe:</strong> Erabili trackpad-a kurtsore urdina zirkulu berde artean mugitzeko. Hasi gezian eta osatu zirkulua behin. Ondoren, ispilatutako jokoa hasiko da!</p>
+<div id="gameContainer">
+<div id="gameArea"><canvas id="trail"></canvas><canvas id="cursorPath"></canvas><div id="cursor"></div><div id="mistakeIndicator"></div></div>
+<div id="trackpad"></div>
+</div>
+<div class="info-box"><p id="score">Ispilurik gabe</p><p id="mistakeCount">Akatsak: 0</p></div>
+</div>
+<div id="results" style="display:none">
+<div class="results-header"><h2>Zure Ikaskuntza Kurba</h2><p>Lan bikaina jokoa osatzen! Hona hemen zure errendimenduaren xehetasunak:</p></div>
+<div class="chart-row">
+<div class="chart-column">
+<div class="chart-title">Zehaztasun Errendimendua</div>
+<div class="chart-container"><canvas id="mistakeChart"></canvas></div>
+<p class="chart-description">Grafiko honek zirkulu bakoitzaren zehaztasuna erakusten du. Beheranzko joera hobekuntzaren adierazle da, akats gutxiago egiten ari baitzara.</p>
+</div>
+<div class="chart-column">
+<div class="chart-title">Denbora Errendimendua</div>
+<div class="chart-container"><canvas id="timeChart"></canvas></div>
+<p class="chart-description">Grafiko honek zirkulu bakoitza osatzeko behar izan duzun denbora erakusten du. Beheranzko joerak hobekuntza adierazten du, denbora gutxiago behar baituzu bukatzeko.</p>
+</div>
+</div>
+<h3>Zure Aurrerapena</h3>
+<div class="screenshots-container" id="screenshotsContainer"></div>
+<div class="btn-container"><button class="btn" onclick="location.reload()">Berriro Jokatu</button></div>
+</div>
+</div>
+<footer>&copy; 2024 Zaindu Zure Ikaskuntza Kurba Jokoa</footer>
+<script>
+const gameArea = document.getElementById("gameArea"),
+    trackpad = document.getElementById("trackpad"),
+    cursor = document.getElementById("cursor"),
+    trail = document.getElementById("trail"),
+    cursorPath = document.getElementById("cursorPath"),
+    ctx = trail.getContext("2d"),
+    pathCtx = cursorPath.getContext("2d"),
+    scoreDisplay = document.getElementById("score"),
+    mistakeCountDisplay = document.getElementById("mistakeCount"),
+    results = document.getElementById("results"),
+    mistakeIndicator = document.getElementById("mistakeIndicator"),
+    instructions = document.getElementById("instructions");
+
+let circleCount = 0,
+    startTime,
+    times = [],
+    mistakes = [],
+    lastX,
+    lastY,
+    startX,
+    startY,
+    isFirstMove = true,
+    lastTrackpadX,
+    lastTrackpadY,
+    hasStartedRound = false,
+    hasCompletedLoop = false,
+    centerX,
+    centerY,
+    isOutside = false,
+    outsideStartTime = 0,
+    currentMistakes = 0,
+    screenshots = [],
+    isNoMirror = true;
+
+function generateCircleTrail() {
+    centerX = trail.width / 2;
+    centerY = trail.height / 2;
+    outerRadius = 140;
+    innerRadius = 120;
+    ctx.clearRect(0, 0, trail.width, trail.height);
+    pathCtx.clearRect(0, 0, cursorPath.width, cursorPath.height);
+    drawCircle(centerX, centerY, outerRadius);
+    drawCircle(centerX, centerY, innerRadius);
+    startX = centerX;
+    startY = centerY - 130;
+    drawArrow(startX, startY - 20, startX, startY);
+    if (!hasStartedRound) {
+        setCursorPosition(startX, startY);
+        lastX = startX;
+        lastY = startY;
+    }
+    pathCtx.beginPath();
+    pathCtx.moveTo(lastX, lastY);
+    isFirstMove = true;
+    hasCompletedLoop = false;
+    currentMistakes = 0;
+    updateMistakeCount();
+}
+
+function drawCircle(x, y, radius) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, 2 * Math.PI);
+    ctx.strokeStyle = "#2ecc71";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+}
+
+function drawArrow(fromX, fromY, toX, toY) {
+    const headLength = 10;
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6));
+    ctx.strokeStyle = "#3498db";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+}
+
+function setCursorPosition(x, y) {
+    cursor.style.left = `${x - 3}px`;
+    cursor.style.top = `${y - 3}px`;
+}
+
+function startCircle() {
+    generateCircleTrail();
+    if (!hasStartedRound) {
+        startTime = Date.now();
+        hasStartedRound = true;
+    }
+}
+
+function endCircle() {
+    const endTime = Date.now();
+    times.push((endTime - startTime) / 1000);
+    mistakes.push(currentMistakes);
+    const screenshot = document.createElement("canvas");
+    screenshot.width = gameArea.offsetWidth;
+    screenshot.height = gameArea.offsetHeight;
+    const screenshotCtx = screenshot.getContext("2d");
+    screenshotCtx.drawImage(trail, 0, 0);
+    screenshotCtx.drawImage(cursorPath, 0, 0);
+    screenshots.push(screenshot.toDataURL());
+    circleCount++;
+    if (isNoMirror) {
+        isNoMirror = false;
+        instructions.innerHTML = "<strong>Ispiluarekin:</strong> Erabili trackpad-a kurtsorea mugitzeko. Orain kurtsorea zure sarreraren aurkako norabidean mugitzen da. Osatu 3 zirkulu, gezitik hasita.";
+        scoreDisplay.textContent = "Zirkulua: 1/3";
+        hasStartedRound = false;
+        isOutside = false;
+        outsideStartTime = 0;
+        startCircle();
+    } else if (circleCount <= 3) {
+        scoreDisplay.textContent = `Zirkulua: ${circleCount}/3`;
+        hasStartedRound = false;
+        isOutside = false;
+        outsideStartTime = 0;
+        startCircle();
+    } else {
+        endGame();
+    }
+}
+
+function endGame() {
+    document.querySelector(".game-section").style.display = "none";
+    results.style.display = "flex";
+    drawLearningCurve();
+    displayScreenshots();
+}
+
+function drawLearningCurve() {
+    drawMistakeChart();
+    drawTimeChart();
+}
+
+function drawTimeChart() {
+    const ctx = document.getElementById("timeChart").getContext("2d");
+    new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: ["1", "2", "3"],
+            datasets: [{
+                label: "Osatzeko denbora (segundoak)",
+                data: times.slice(1),
+                borderColor: "#3498db",
+                backgroundColor: "rgba(52, 152, 219, 0.2)",
+                tension: 0.1,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: "Denbora (segundoak)"
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: "Zirkulu zenbakia"
+                    }
+                }
+            },
+            plugins: {
+                title: {
+                    display: false
+                }
+            }
+        }
+    });
+}
+
+function drawMistakeChart() {
+    const ctx = document.getElementById("mistakeChart").getContext("2d");
+    new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: ["1", "2", "3"],
+            datasets: [{
+                label: "Akats kopurua",
+                data: mistakes.slice(1),
+                borderColor: "#e74c3c",
+                backgroundColor: "rgba(231, 76, 60, 0.2)",
+                tension: 0.1,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: "Akats kopurua"
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: "Zirkulu zenbakia"
+                    }
+                }
+            },
+            plugins: {
+                title: {
+                    display: false
+                }
+            }
+        }
+    });
+}
+
+function displayScreenshots() {
+    const container = document.getElementById("screenshotsContainer");
+    screenshots.forEach((screenshot, index) => {
+        const screenshotDiv = document.createElement("div");
+        screenshotDiv.className = "screenshot";
+        const img = document.createElement("img");
+        img.src = screenshot;
+        img.alt = `Zirkulua ${index}`;
+        const caption = document.createElement("p");
+        caption.className = "screenshot-caption";
+        caption.textContent = index === 0 ? "Ispilurik gabe" : `Zirkulua ${index}`;
+        screenshotDiv.appendChild(img);
+        screenshotDiv.appendChild(caption);
+        container.appendChild(screenshotDiv);
+    });
+}
+
+function moveCursor(e) {
+    const rect = trackpad.getBoundingClientRect();
+    const x = (e.clientX || e.touches[0].clientX) - rect.left;
+    const y = (e.clientY || e.touches[0].clientY) - rect.top;
+    if (isFirstMove) {
+        lastTrackpadX = x;
+        lastTrackpadY = y;
+        isFirstMove = false;
+        return;
+    }
+
+    const dx = x - lastTrackpadX;
+    const dy = y - lastTrackpadY;
+    lastTrackpadX = x;
+    lastTrackpadY = y;
+
+    const newX = lastX + (isNoMirror ? 1 : -1) * dx;
+    const newY = lastY + (isNoMirror ? 1 : -1) * dy;
+
+    const clampedX = Math.max(0, Math.min(newX, gameArea.offsetWidth - 6));
+    const clampedY = Math.max(0, Math.min(newY, gameArea.offsetHeight - 6));
+
+    setCursorPosition(clampedX, clampedY);
+
+    pathCtx.beginPath();
+    pathCtx.moveTo(lastX, lastY);
+    pathCtx.lineTo(clampedX, clampedY);
+    pathCtx.strokeStyle = "rgba(52, 152, 219, 0.5)";
+    pathCtx.lineWidth = 2;
+    pathCtx.stroke();
+
+    lastX = clampedX;
+    lastY = clampedY;
+
+    checkCircleProgress(clampedX, clampedY);
+}
+
+function checkCircleProgress(x, y) {
+    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+    if (distance >= innerRadius && distance <= outerRadius) {
+        if (isOutside) {
+            isOutside = false;
+            outsideStartTime = 0;
+        }
+        const distanceFromStart = Math.sqrt(Math.pow(x - startX, 2) + Math.pow(y - startY, 2));
+        if (distanceFromStart > 50) {
+            hasCompletedLoop = true;
+        }
+        if (hasCompletedLoop && distanceFromStart < 10) {
+            endCircle();
+        }
+    } else if (!isOutside) {
+        isOutside = true;
+        outsideStartTime = Date.now();
+        currentMistakes++;
+        updateMistakeCount();
+        showMistakeIndicator(x, y);
+    }
+}
+
+function showMistakeIndicator(x, y) {
+    cursor.style.backgroundColor = "#e74c3c";
+    mistakeIndicator.style.left = `${x - 20}px`;
+    mistakeIndicator.style.top = `${y - 20}px`;
+    mistakeIndicator.style.display = "block";
+    mistakeIndicator.style.animation = "none";
+    mistakeIndicator.offsetHeight;
+    mistakeIndicator.style.animation = null;
+    setTimeout(() => {
+        cursor.style.backgroundColor = "#3498db";
+        mistakeIndicator.style.display = "none";
+    }, 500);
+}
+
+function updateMistakeCount() {
+    mistakeCountDisplay.textContent = `Akatsak: ${currentMistakes}`;
+}
+
+trail.width = gameArea.offsetWidth;
+trail.height = gameArea.offsetHeight;
+cursorPath.width = gameArea.offsetWidth;
+cursorPath.height = gameArea.offsetHeight;
+
+trackpad.addEventListener("mousedown", (e) => {
+    isFirstMove = true;
+    moveCursor(e);
+});
+
+trackpad.addEventListener("mousemove", (e) => {
+    if (e.buttons > 0) {
+        moveCursor(e);
+    }
+});
+
+trackpad.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    isFirstMove = true;
+    moveCursor(e.touches[0]);
+});
+
+trackpad.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    moveCursor(e.touches[0]);
+});
+
+startCircle();
+</script>
+</body>
+</html>
